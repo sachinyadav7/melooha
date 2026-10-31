@@ -12,7 +12,8 @@ def _driver_url(url: str) -> str:
     return url
 
 
-engine = create_engine(_driver_url(settings.database_url), pool_pre_ping=True)
+connect_args = {"check_same_thread": False} if settings.database_url.startswith("sqlite") else {}
+engine = create_engine(_driver_url(settings.database_url), pool_pre_ping=True, connect_args=connect_args)
 SessionLocal = sessionmaker(bind=engine, expire_on_commit=False)
 
 

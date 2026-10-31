@@ -12,6 +12,11 @@ class RequestIn(BaseModel):
     request_id: str = Field(min_length=1, max_length=64)
 
 
+class AskIn(BaseModel):
+    question: str = Field(min_length=3, max_length=500)
+    request_id: str = Field(min_length=1, max_length=64)
+
+
 class BalanceOut(BaseModel):
     user_id: int
     balance: int
