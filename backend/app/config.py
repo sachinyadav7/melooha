@@ -9,5 +9,9 @@ class Settings(BaseSettings):
     groq_api_key: str = ""
     frontend_origin: str = "http://localhost:3000"
 
+    # Question balance rules
+    free_questions: int = 1  # given once when a user signs up
+    questions_per_pack: int = 5  # added by one "Add questions" tap
+
 
 settings = Settings()
