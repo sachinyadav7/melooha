@@ -5,19 +5,20 @@ from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app import answering
+from app import answering, events, stats
 from app import balance as bal
 from app import llm
 from app.chart import compute_chart
 from app.cities import CITIES, find_city
 from app.config import settings
 from app.db import Base, SessionLocal, engine, get_db
+from app.experiment import group_for
 from app.models import Chart, Question, User
 from app.prompt import build_prompts
-from app.schemas import ActionOut, AskIn, BalanceOut, BirthDetails, ChartOut, RequestIn, UserCreate
+from app.schemas import ActionOut, AskIn, BalanceOut, BirthDetails, ChartOut, EventIn, RequestIn, UserCreate, UserOut
 
 log = logging.getLogger(__name__)
 
@@ -121,10 +122,17 @@ def list_cities():
 
 # ---------- balance ----------
 
-@app.post("/users", response_model=BalanceOut, status_code=201)
+@app.post("/users", response_model=UserOut, status_code=201)
 def create_user(body: UserCreate, db: Session = Depends(get_db)):
     user = bal.create_user(db, body.name)
-    return BalanceOut(user_id=user.id, balance=bal.get_balance(db, user.id))
+    return UserOut(user_id=user.id, balance=bal.get_balance(db, user.id), experiment_group=group_for(user.id))
+
+
+@app.get("/users/{user_id}", response_model=UserOut)
+def get_user(user_id: int, db: Session = Depends(get_db)):
+    if db.get(User, user_id) is None:
+        raise bal.UserNotFound(user_id)
+    return UserOut(user_id=user_id, balance=bal.get_balance(db, user_id), experiment_group=group_for(user_id))
 
 
 @app.get("/users/{user_id}/balance", response_model=BalanceOut)
@@ -137,6 +145,8 @@ def get_balance(user_id: int, db: Session = Depends(get_db)):
 @app.post("/users/{user_id}/add-questions", response_model=ActionOut)
 def add_questions(user_id: int, body: RequestIn, db: Session = Depends(get_db)):
     balance, replayed = bal.add_questions(db, user_id, body.request_id)
+    if not replayed:
+        events.log_event(db, user_id, "add_questions_clicked", {"balance_after": balance})
     return ActionOut(user_id=user_id, balance=balance, replayed=replayed)
 
 
@@ -161,6 +171,7 @@ def save_chart(user_id: int, body: BirthDetails, db: Session = Depends(get_db)):
     data = compute_chart(body.date, body.time, lat, lon)
 
     row = db.scalar(select(Chart).where(Chart.user_id == user_id))
+    is_first_chart = row is None
     if row is None:
         row = Chart(user_id=user_id)
         db.add(row)
@@ -171,6 +182,8 @@ def save_chart(user_id: int, body: BirthDetails, db: Session = Depends(get_db)):
     row.longitude = lon
     row.data = data
     db.commit()
+    if is_first_chart:
+        events.log_event(db, user_id, "onboarding_done", {"city": city})
     return _chart_out(row)
 
 
@@ -242,6 +255,13 @@ def _answer_stream(session_factory, providers, user_id, question_id, request_id,
                     question.output_tokens = final["usage"].output_tokens
                 session.commit()
                 balance = bal.get_balance(session, user_id)
+                answered = session.scalar(
+                    select(func.count()).select_from(Question).where(
+                        Question.user_id == user_id, Question.status == "answered"
+                    )
+                )
+                if answered == 1:  # the user's first answer is the start of the conversion window
+                    events.log_event(session, user_id, "free_answer_received", {"provider": final["provider"]})
             finally:
                 session.close()
             finished = True
@@ -329,3 +349,20 @@ def ask(
         media_type="text/event-stream",
         headers=headers,
     )
+
+
+# ---------- tracking ----------
+
+@app.post("/users/{user_id}/events", status_code=202)
+def track_event(user_id: int, body: EventIn, db: Session = Depends(get_db)):
+    """The app reports what the user looked at. Only these events can come from the app."""
+    if db.get(User, user_id) is None:
+        raise bal.UserNotFound(user_id)
+    events.log_event(db, user_id, body.name, body.properties)
+    return {"status": "recorded"}
+
+
+@app.get("/stats/conversion")
+def conversion(db: Session = Depends(get_db)):
+    """Counts only, no personal data. Compares the chart group with the control group."""
+    return stats.conversion_stats(db)

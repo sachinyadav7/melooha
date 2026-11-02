@@ -4,7 +4,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=(".env", "../.env"), extra="ignore")
 
-    database_url: str = "postgresql://melooha:melooha@localhost:5432/melooha"
+    database_url: str = "sqlite:///./melooha.db"
     frontend_origin: str = "http://localhost:3000"
 
     # Question balance rules

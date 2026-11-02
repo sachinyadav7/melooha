@@ -1,4 +1,5 @@
 from datetime import date, time
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -20,6 +21,15 @@ class AskIn(BaseModel):
 class BalanceOut(BaseModel):
     user_id: int
     balance: int
+
+
+class UserOut(BalanceOut):
+    experiment_group: Literal["chart", "control"]  # which version of the app this user should see
+
+
+class EventIn(BaseModel):
+    name: Literal["chart_viewed", "evidence_tapped", "paywall_viewed"]
+    properties: dict[str, str | int | float | bool] = Field(default_factory=dict, max_length=10)
 
 
 class ActionOut(BaseModel):
