@@ -1,0 +1,5 @@
+{
+  "_note": "PLACEHOLDER prices in US dollars per million tokens. The free tiers cost nothing, so these show what the same traffic would cost on a paid plan. Replace with the current numbers from each provider's pricing page before quoting a cost.",
+  "gemini": {"input_per_million": 0.10, "output_per_million": 0.40},
+  "groq": {"input_per_million": 0.10, "output_per_million": 0.40}
+}
