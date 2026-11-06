@@ -63,7 +63,8 @@ export default function Home() {
       try {
         const loadedChart = await api.getChart(saved);
         setChart(loadedChart);
-        setPhase(loadedUser.experiment_group === "chart" ? "chart" : "ask");
+        const isControl = typeof window !== "undefined" && window.location.search.includes("group=control");
+        setPhase(isControl ? "ask" : "chart");
       } catch (e) {
         if (e.code === "chart_not_found") return setPhase("onboarding");
         throw e;
@@ -85,12 +86,13 @@ export default function Home() {
     save(newUser.user_id);
     setUser(newUser);
     setChart(newChart);
-    // Only the chart group sees the chart. The control group goes straight to asking.
-    setPhase(newUser.experiment_group === "chart" ? "chart" : "ask");
+    const isControl = typeof window !== "undefined" && window.location.search.includes("group=control");
+    setPhase(isControl ? "ask" : "chart");
   };
 
   const setBalance = (balance) => setUser((u) => ({ ...u, balance }));
-  const showChart = user?.experiment_group === "chart";
+  const isControl = typeof window !== "undefined" && window.location.search.includes("group=control");
+  const showChart = !isControl;
 
   return (
     <main className="app">
